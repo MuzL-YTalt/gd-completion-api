@@ -31,6 +31,88 @@ async function getProfile(accountId) {
   return getJson(`${GDBROWSER_BASE}/profile/${encodeURIComponent(accountId)}`);
 }
 
+async function searchLevels(levelName) {
+  const query = String(levelName || "").trim();
+  if (!query) throw new Error("Level name is required.");
+
+  const data = await getJson(`${GDBROWSER_BASE}/search/${encodeURIComponent(query)}`);
+  return Array.isArray(data) ? data : [];
+}
+
+function normaliseLevel(level) {
+  return {
+    levelId: level.id != null ? String(level.id) : level.levelID != null ? String(level.levelID) : null,
+    name: level.name || level.levelName || "",
+    creator: level.author || level.creator || level.username || "",
+    difficulty: level.difficulty || ""
+  };
+}
+
+function isExtremeDemon(level) {
+  const difficulty = String(level.difficulty || "").toLowerCase();
+  return difficulty.includes("extreme") || difficulty === "extreme demon";
+}
+
+/**
+ * Resolves a level from the name entered in the spreadsheet.
+ *
+ * Rules:
+ * - Search by exact level name first.
+ * - If exactly one Extreme Demon matches, select it automatically.
+ * - If multiple Extreme Demons share the name, require either levelId or creator.
+ * - A supplied levelId always takes priority because it uniquely identifies a level.
+ * - A supplied creator may disambiguate the name; if it still matches multiple levels,
+ *   the caller must provide the level ID instead of guessing.
+ */
+async function resolveLevel({ levelName, levelId = null, creator = null }) {
+  const requestedName = String(levelName || "").trim();
+  if (!requestedName) throw new Error("Level name is required.");
+
+  const searched = (await searchLevels(requestedName)).map(normaliseLevel).filter(level =>
+    level.levelId && level.name.toLowerCase() === requestedName.toLowerCase()
+  );
+
+  const extremeLevels = searched.filter(isExtremeDemon);
+  const candidates = extremeLevels.length > 0 ? extremeLevels : searched;
+
+  if (levelId != null && String(levelId).trim() !== "") {
+    const id = String(levelId).trim();
+    const byId = candidates.find(level => level.levelId === id) || searched.find(level => level.levelId === id);
+    if (!byId) {
+      throw new Error(`Level ID ${id} was not found for level name "${requestedName}".`);
+    }
+    return { status: "resolved", level: byId, candidates };
+  }
+
+  if (candidates.length === 0) {
+    return { status: "not_found", level: null, candidates: [] };
+  }
+
+  if (candidates.length === 1) {
+    return { status: "resolved", level: candidates[0], candidates };
+  }
+
+  if (creator != null && String(creator).trim() !== "") {
+    const requestedCreator = String(creator).trim().toLowerCase();
+    const byCreator = candidates.filter(level => level.creator.toLowerCase() === requestedCreator);
+
+    if (byCreator.length === 1) {
+      return { status: "resolved", level: byCreator[0], candidates };
+    }
+  }
+
+  return {
+    status: "needs_disambiguation",
+    level: null,
+    candidates: candidates.map(level => ({
+      levelId: level.levelId,
+      name: level.name,
+      creator: level.creator,
+      difficulty: level.difficulty
+    }))
+  };
+}
+
 async function getLevelComments(levelId, page = 0, count = 100) {
   const url = `${GDBROWSER_BASE}/comments/${encodeURIComponent(levelId)}?page=${page}&count=${count}`;
   return getJson(url);
@@ -150,8 +232,36 @@ async function lookupCompletionDate({ levelId, user }) {
   };
 }
 
+/**
+ * Complete the level-identification part of a spreadsheet lookup.
+ * This deliberately resolves the level BEFORE searching for the user's comment.
+ */
+async function lookupCompletion({ levelName, levelId = null, creator = null, user }) {
+  const resolution = await resolveLevel({ levelName, levelId, creator });
+
+  if (resolution.status !== "resolved") {
+    return {
+      status: resolution.status,
+      level: null,
+      candidates: resolution.candidates
+    };
+  }
+
+  const level = resolution.level;
+  const completion = await lookupCompletionDate({ levelId: level.levelId, user });
+
+  return {
+    status: completion.commentId ? "resolved" : "level_resolved_comment_not_found",
+    level,
+    candidates: resolution.candidates,
+    completion
+  };
+}
+
 module.exports = {
   getProfile,
+  searchLevels,
+  resolveLevel,
   getLevelComments,
   getProfileComments,
   getUserCommentHistory,
@@ -159,5 +269,6 @@ module.exports = {
   findLevelComment,
   findProfileComment,
   getHistoricalCommentDate,
-  lookupCompletionDate
+  lookupCompletionDate,
+  lookupCompletion
 };
