@@ -1,6 +1,9 @@
 name: Test Geometry Dash API
 
 on:
+  push:
+    paths:
+      - '.github/workflows/test-gd-api.yml'
   workflow_dispatch:
     inputs:
       level_id:
@@ -32,7 +35,7 @@ jobs:
               --data-urlencode 'gameVersion=22' \
               --data-urlencode 'binaryVersion=47')
           else
-            echo "Endpoint: downloadGJLevel22.php"
+            echo 'Endpoint: downloadGJLevel22.php'
             echo "Level ID: $LEVEL_ID"
             RESPONSE=$(curl -sS -w '\nHTTP_STATUS:%{http_code}' \
               -X POST \
