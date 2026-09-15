@@ -1,9 +1,0 @@
-{
-  "name": "gd-completion-api",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Small API proxy for Geometry Dash level data used by a Google Sheets completion tracker.",
-  "engines": {
-    "node": ">=22"
-  }
-}
