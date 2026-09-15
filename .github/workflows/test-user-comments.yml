@@ -1,0 +1,43 @@
+name: Test User Comment History
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  test-user-comments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch every level comment for account 18986696
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const {
+            getProfile,
+            getAllUserComments
+          } = require('./src/lookup');
+
+          const accountId = '18986696';
+          const profile = await getProfile(accountId);
+          const comments = await getAllUserComments(accountId);
+
+          console.log(`Account ID: ${profile.accountID}`);
+          console.log(`Username: ${profile.username}`);
+          console.log(`Player ID: ${profile.playerID}`);
+          console.log(`Comment history visibility: ${profile.commentHistory}`);
+          console.log(`Level comments found: ${comments.length}`);
+
+          for (const comment of comments) {
+            console.log(JSON.stringify({
+              commentId: comment.ID,
+              levelId: comment.levelID,
+              date: comment.date,
+              content: comment.content
+            }));
+          }
+          NODE
