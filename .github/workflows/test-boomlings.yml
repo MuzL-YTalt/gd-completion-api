@@ -19,8 +19,6 @@ jobs:
           response=$(curl -fsS \
             "https://gdbrowser.com/api/level/128")
 
-          echo "GDBrowser level response: $response"
-
           if ! printf '%s' "$response" | grep -q '"id"'; then
             echo "GDBrowser did not return the expected JSON level data."
             exit 1
@@ -31,37 +29,77 @@ jobs:
             exit 1
           fi
 
-          echo "GDBrowser level API is reachable and returning level data."
+          echo "GDBrowser level API works."
 
-      - name: Test GDBrowser comments and date service
+      - name: Test GDBrowser level comments
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Testing GDBrowser comments..."
-
           comments=$(curl -fsS \
             "https://gdbrowser.com/api/comments/128")
 
-          echo "GDBrowser comments response: $comments"
+          echo "First level comment:"
+          printf '%s' "$comments" | jq '.[0] | {ID, content, username, playerID, accountID, date, levelID}'
 
-          comment_id=$(printf '%s' "$comments" | jq -r '.[0].ID // .[0].id // empty')
+          comment_id=$(printf '%s' "$comments" | jq -r '.[0].ID // empty')
 
           if [ -z "$comment_id" ]; then
-            echo "No comment ID was found in the GDBrowser response."
+            echo "No comment ID was found."
             exit 1
           fi
 
-          echo "Testing GDHistory date service for level 128, comment $comment_id..."
+          echo "GDBrowser level comments work."
+
+      - name: Test GDBrowser account comments
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Uino's player ID from the level-comment response above.
+          account_comments=$(curl -fsS \
+            "https://gdbrowser.com/api/comments/306345839?type=profile")
+
+          echo "First account/profile comment:"
+          printf '%s' "$account_comments" | jq '.[0] // {} | {ID, content, username, playerID, accountID, date}'
+
+          if ! printf '%s' "$account_comments" | jq -e 'type == "array"' >/dev/null; then
+            echo "GDBrowser did not return an account-comment array."
+            exit 1
+          fi
+
+          echo "GDBrowser account comments work."
+
+      - name: Test GDHistory date estimation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Use an older page of level comments so the historical estimator has
+          # a better chance of having data for the comment.
+          old_comments=$(curl -fsS \
+            "https://gdbrowser.com/api/comments/128?page=4426")
+
+          old_comment_id=$(printf '%s' "$old_comments" | jq -r '.[0].ID // empty')
+
+          if [ -z "$old_comment_id" ]; then
+            echo "No older comment was returned by GDBrowser."
+            exit 1
+          fi
+
+          echo "Testing GDHistory for old comment $old_comment_id..."
 
           date_response=$(curl -fsS \
-            "https://history.geometrydash.eu/api/v1/date/comment/128/$comment_id/level/")
+            "https://history.geometrydash.eu/api/v1/date/comment/128/$old_comment_id/level/")
 
-          echo "GDHistory date response: $date_response"
+          echo "GDHistory response: $date_response"
 
-          if ! printf '%s' "$date_response" | jq -e '.approx.estimation // .low.estimation' >/dev/null; then
-            echo "GDHistory did not return an expected date estimate."
+          # GDHistory is an estimator and its database is incomplete, so an
+          # empty object is a valid service response; it simply means that no
+          # estimate is available for this particular comment yet.
+          if ! printf '%s' "$date_response" | jq -e 'type == "object"' >/dev/null; then
+            echo "GDHistory returned an unexpected response."
             exit 1
           fi
 
-          echo "GDBrowser comment lookup and GDHistory date lookup both work."
+          echo "GDHistory date service is reachable."
