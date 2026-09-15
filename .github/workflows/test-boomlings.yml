@@ -6,27 +6,29 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-boomlings:
+  test-gdbrowser:
     runs-on: ubuntu-latest
     steps:
-      - name: Test Boomlings connection
+      - name: Test GDBrowser level endpoint
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Testing Boomlings from a GitHub-hosted runner..."
+          echo "Testing GDBrowser from a GitHub-hosted runner..."
 
-          response=$(curl -sS \
-            -X POST \
-            "https://www.boomlings.com/database/getGJDailyLevel.php" \
-            -A "" \
-            --data "secret=Wmfd2893gb7&type=0")
+          response=$(curl -fsS \
+            "https://gdbrowser.com/api/level/128")
 
-          echo "Boomlings response: $response"
+          echo "GDBrowser response: $response"
 
-          if [ -z "$response" ] || [ "$response" = "-1" ]; then
-            echo "Boomlings did not return a valid response."
+          if ! printf '%s' "$response" | grep -q '"id"'; then
+            echo "GDBrowser did not return the expected JSON level data."
             exit 1
           fi
 
-          echo "GitHub Actions can reach the Geometry Dash servers."
+          if ! printf '%s' "$response" | grep -q '"name"'; then
+            echo "GDBrowser response is missing the level name."
+            exit 1
+          fi
+
+          echo "GDBrowser API is reachable and returning level data."
