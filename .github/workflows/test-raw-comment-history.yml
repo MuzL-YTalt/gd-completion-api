@@ -14,7 +14,8 @@ jobs:
         run: |
           set -euo pipefail
           curl -sS -X POST \
-            -H 'User-Agent: Geometry Dash' \
+            -H 'User-Agent:' \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
             --data 'userID=142174806' \
             --data 'page=0' \
             --data 'count=100' \
