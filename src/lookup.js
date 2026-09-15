@@ -76,15 +76,33 @@ async function findProfileComment(accountId, user, maxPages = 100) {
   return null;
 }
 
-async function getAllUserComments(playerId, maxPages = 100) {
+// GDBrowser's commentHistory endpoint expects the player's Player ID,
+// while the public profile can be found using the registered Account ID.
+// This helper accepts the Account ID and resolves the Player ID first.
+async function getAllUserComments(accountId, maxPages = 100) {
+  const profile = await getProfile(accountId);
+
+  if (!profile || profile.playerID == null) {
+    throw new Error(`Could not resolve Player ID for account ${accountId}.`);
+  }
+
   const all = [];
+  const user = {
+    accountId: profile.accountID,
+    playerId: profile.playerID,
+    username: profile.username
+  };
 
   for (let page = 0; page < maxPages; page += 1) {
-    const comments = await getUserCommentHistory(playerId, page, 100);
+    const comments = await getUserCommentHistory(profile.playerID, page, 100);
 
     if (!Array.isArray(comments) || comments.length === 0) break;
 
-    all.push(...comments);
+    for (const comment of comments) {
+      if (matchesUser(comment, user) && comment.levelID != null) {
+        all.push(comment);
+      }
+    }
 
     if (comments.length < 100) break;
   }
