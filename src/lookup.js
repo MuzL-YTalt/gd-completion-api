@@ -48,18 +48,16 @@ function normaliseLevel(level) {
   };
 }
 
-function isExtremeDemon(level) {
-  const difficulty = String(level.difficulty || "").toLowerCase();
-  return difficulty.includes("extreme") || difficulty === "extreme demon";
-}
-
 /**
  * Resolves a level from the name entered in the spreadsheet.
+ * Difficulty is deliberately NOT used to reject a level. A level may have
+ * changed between Extreme Demon and Insane Demon, so the level ID is the
+ * stable identity we care about.
  *
  * Rules:
  * - Search by exact level name first.
- * - If exactly one Extreme Demon matches, select it automatically.
- * - If multiple Extreme Demons share the name, require either levelId or creator.
+ * - If exactly one match exists, select it automatically.
+ * - If multiple levels share the name, require either levelId or creator.
  * - A supplied levelId always takes priority because it uniquely identifies a level.
  * - A supplied creator may disambiguate the name; if it still matches multiple levels,
  *   the caller must provide the level ID instead of guessing.
@@ -72,50 +70,42 @@ async function resolveLevel({ levelName, levelId = null, creator = null }) {
     level.levelId && level.name.toLowerCase() === requestedName.toLowerCase()
   );
 
-  const extremeLevels = searched.filter(isExtremeDemon);
-  const candidates = extremeLevels.length > 0 ? extremeLevels : searched;
-
   if (levelId != null && String(levelId).trim() !== "") {
     const id = String(levelId).trim();
-    const byId = candidates.find(level => level.levelId === id) || searched.find(level => level.levelId === id);
+    const byId = searched.find(level => level.levelId === id);
     if (!byId) {
       throw new Error(`Level ID ${id} was not found for level name "${requestedName}".`);
     }
-    return { status: "resolved", level: byId, candidates };
+    return { status: "resolved", level: byId, candidates: searched };
   }
 
-  if (candidates.length === 0) {
+  if (searched.length === 0) {
     return { status: "not_found", level: null, candidates: [] };
   }
 
-  if (candidates.length === 1) {
-    return { status: "resolved", level: candidates[0], candidates };
+  if (searched.length === 1) {
+    return { status: "resolved", level: searched[0], candidates: searched };
   }
 
   if (creator != null && String(creator).trim() !== "") {
     const requestedCreator = String(creator).trim().toLowerCase();
-    const byCreator = candidates.filter(level => level.creator.toLowerCase() === requestedCreator);
+    const byCreator = searched.filter(level => level.creator.toLowerCase() === requestedCreator);
 
     if (byCreator.length === 1) {
-      return { status: "resolved", level: byCreator[0], candidates };
+      return { status: "resolved", level: byCreator[0], candidates: searched };
     }
   }
 
   return {
     status: "needs_disambiguation",
     level: null,
-    candidates: candidates.map(level => ({
+    candidates: searched.map(level => ({
       levelId: level.levelId,
       name: level.name,
       creator: level.creator,
       difficulty: level.difficulty
     }))
   };
-}
-
-async function getLevelComments(levelId, page = 0, count = 100) {
-  const url = `${GDBROWSER_BASE}/comments/${encodeURIComponent(levelId)}?page=${page}&count=${count}`;
-  return getJson(url);
 }
 
 async function getProfileComments(accountId, page = 0, count = 100) {
@@ -128,40 +118,46 @@ async function getUserCommentHistory(playerId, page = 0, count = 100) {
   return getJson(url);
 }
 
-async function findLevelComment(levelId, user, maxPages = 100) {
-  for (let page = 0; page < maxPages; page += 1) {
-    const comments = await getLevelComments(levelId, page, 100);
+/**
+ * Search the authenticated user's comment history by level ID.
+ * The number of pages is intentionally variable: continue until the matching
+ * levelID is found or GDBrowser reaches the end of the account's history.
+ * There is no fixed comment-count assumption.
+ */
+async function findUserCommentByLevelId(accountId, levelId) {
+  const targetLevelId = String(levelId);
+  const profile = await getProfile(accountId);
 
-    if (!Array.isArray(comments) || comments.length === 0) return null;
-
-    const match = comments.find(comment => matchesUser(comment, user));
-    if (match) return match;
-
-    if (comments.length < 100) return null;
+  if (!profile || profile.playerID == null) {
+    throw new Error(`Could not resolve Player ID for account ${accountId}.`);
   }
 
-  return null;
-}
+  for (let page = 0; ; page += 1) {
+    const comments = await getUserCommentHistory(profile.playerID, page, 100);
 
-async function findProfileComment(accountId, user, maxPages = 100) {
-  for (let page = 0; page < maxPages; page += 1) {
-    const comments = await getProfileComments(accountId, page, 100);
+    if (!Array.isArray(comments) || comments.length === 0) {
+      return null;
+    }
 
-    if (!Array.isArray(comments) || comments.length === 0) return null;
+    const match = comments.find(comment =>
+      matchesUser(comment, {
+        accountId: profile.accountID,
+        playerId: profile.playerID,
+        username: profile.username
+      }) &&
+      comment.levelID != null &&
+      String(comment.levelID) === targetLevelId
+    );
 
-    const match = comments.find(comment => matchesUser(comment, user));
     if (match) return match;
 
-    if (comments.length < 100) return null;
+    if (comments.length < 100) {
+      return null;
+    }
   }
-
-  return null;
 }
 
-// GDBrowser's commentHistory endpoint expects the player's Player ID,
-// while the public profile can be found using the registered Account ID.
-// This helper accepts the Account ID and resolves the Player ID first.
-async function getAllUserComments(accountId, maxPages = 100) {
+async function getAllUserComments(accountId) {
   const profile = await getProfile(accountId);
 
   if (!profile || profile.playerID == null) {
@@ -175,7 +171,7 @@ async function getAllUserComments(accountId, maxPages = 100) {
     username: profile.username
   };
 
-  for (let page = 0; page < maxPages; page += 1) {
+  for (let page = 0; ; page += 1) {
     const comments = await getUserCommentHistory(profile.playerID, page, 100);
 
     if (!Array.isArray(comments) || comments.length === 0) break;
@@ -204,39 +200,40 @@ async function getHistoricalCommentDate(levelId, commentId) {
   return null;
 }
 
-async function lookupCompletionDate({ levelId, user }) {
-  const levelComment = await findLevelComment(levelId, user);
+async function lookupCompletionDate({ accountId, levelId }) {
+  const userComment = await findUserCommentByLevelId(accountId, levelId);
 
-  if (levelComment) {
-    let historicalDate = null;
-
-    try {
-      historicalDate = await getHistoricalCommentDate(levelId, levelComment.ID);
-    } catch (error) {
-      // Keep GDBrowser's relative date as a fallback if GDHistory has no entry.
-    }
-
+  if (!userComment) {
     return {
-      source: historicalDate ? "gdhistory" : "gdbrowser",
-      commentId: levelComment.ID,
-      date: historicalDate || levelComment.date || null,
-      comment: levelComment.content || ""
+      source: null,
+      commentId: null,
+      date: null,
+      comment: null
     };
   }
 
+  let historicalDate = null;
+
+  try {
+    historicalDate = await getHistoricalCommentDate(levelId, userComment.ID);
+  } catch (error) {
+    // Keep GDBrowser's relative date as a fallback if GDHistory has no entry.
+  }
+
   return {
-    source: null,
-    commentId: null,
-    date: null,
-    comment: null
+    source: historicalDate ? "gdhistory" : "gdbrowser",
+    commentId: userComment.ID,
+    date: historicalDate || userComment.date || null,
+    comment: userComment.content || ""
   };
 }
 
 /**
  * Complete the level-identification part of a spreadsheet lookup.
- * This deliberately resolves the level BEFORE searching for the user's comment.
+ * This resolves the level first, then searches ONLY the configured account's
+ * comment history using the levelID attached to each comment.
  */
-async function lookupCompletion({ levelName, levelId = null, creator = null, user }) {
+async function lookupCompletion({ levelName, levelId = null, creator = null, accountId }) {
   const resolution = await resolveLevel({ levelName, levelId, creator });
 
   if (resolution.status !== "resolved") {
@@ -248,7 +245,10 @@ async function lookupCompletion({ levelName, levelId = null, creator = null, use
   }
 
   const level = resolution.level;
-  const completion = await lookupCompletionDate({ levelId: level.levelId, user });
+  const completion = await lookupCompletionDate({
+    accountId,
+    levelId: level.levelId
+  });
 
   return {
     status: completion.commentId ? "resolved" : "level_resolved_comment_not_found",
@@ -262,12 +262,10 @@ module.exports = {
   getProfile,
   searchLevels,
   resolveLevel,
-  getLevelComments,
   getProfileComments,
   getUserCommentHistory,
+  findUserCommentByLevelId,
   getAllUserComments,
-  findLevelComment,
-  findProfileComment,
   getHistoricalCommentDate,
   lookupCompletionDate,
   lookupCompletion
