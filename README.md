@@ -1,24 +1,33 @@
-# Geometry Dash Completion API
+# Geometry Dash Level Lookup API
 
-GitHub-only backend for the Geometry Dash completion spreadsheet.
+GitHub repository for the Geometry Dash completion spreadsheet's level-lookup tooling.
 
-## Current data sources
+## Current purpose
 
-- **GDBrowser**: level metadata, level comments, and profile/account comments.
-- **GDHistory**: historical comment-date lookup where its database contains an estimate.
-- **Official Geometry Dash comment data**: the raw comment response contains a timestamp field used by BetterInfo, but GDBrowser currently exposes only a relative date. Exact timestamp extraction remains an open investigation.
+The project provides a small Node.js lookup layer around GDBrowser for:
 
-## Completion-date strategy
+- level metadata
+- exact level-name searches
+- current Extreme Demon filtering
+- Level ID lookups
+- creator-based disambiguation
 
-For a completion row, the intended lookup order is:
+## Level resolution rules
 
-1. Find the user's comment on the level through GDBrowser.
-2. Pass the comment ID to GDHistory for a historical date when available.
-3. If no historical date exists, use the GDBrowser relative date as a fallback.
-4. Investigate a direct/raw Geometry Dash response path for exact timestamps.
+1. An explicit Level ID is treated as the stable level identity.
+2. If a Level ID is supplied, the level does not need to be a current Extreme Demon.
+3. Name-only searches are restricted to current Extreme Demons.
+4. Exact duplicate names remain ambiguous unless the creator uniquely identifies one.
+5. Level ID takes priority over name-based matching.
 
-Profile/account comments can be queried separately when a level comment is not available.
+## Completion dates
 
-## Important architecture note
+Completion dates are intentionally **not handled by this repository**.
 
-GitHub Pages is static, and GitHub Actions is not a permanent HTTP server. Therefore the repository is currently being used as the processing/test layer rather than pretending that a GitHub repository can expose a dynamic API endpoint by itself. A hosted runtime will only be introduced if the final spreadsheet integration genuinely requires one.
+The spreadsheet stores the completion date as a manual field. This avoids confusing a level's historical upload date, a comment date, or a locally recorded completion date with the player's actual completion date.
+
+## GitHub Actions
+
+The remaining workflow is a manual level-lookup test. GitHub Actions is used for testing the lookup code, not as a permanent API server.
+
+The spreadsheet itself can call public services directly with Google Apps Script's `UrlFetchApp` service.
