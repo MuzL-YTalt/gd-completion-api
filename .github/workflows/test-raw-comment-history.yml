@@ -21,6 +21,7 @@ jobs:
             --data 'mode=0' \
             --data 'gameVersion=22' \
             --data 'binaryVersion=47' \
+            --data 'secret=Wmfd2893gb7' \
             'https://www.boomlings.com/database/getGJCommentHistory.php' \
             | tee raw-comment-history.txt
 
