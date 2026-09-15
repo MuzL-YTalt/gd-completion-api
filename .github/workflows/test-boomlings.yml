@@ -1,6 +1,8 @@
 name: Test Geometry Dash API Access
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
