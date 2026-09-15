@@ -27,6 +27,10 @@ function matchesUser(comment, user) {
   return false;
 }
 
+async function getProfile(accountId) {
+  return getJson(`${GDBROWSER_BASE}/profile/${encodeURIComponent(accountId)}`);
+}
+
 async function getLevelComments(levelId, page = 0, count = 100) {
   const url = `${GDBROWSER_BASE}/comments/${encodeURIComponent(levelId)}?page=${page}&count=${count}`;
   return getJson(url);
@@ -37,54 +41,61 @@ async function getProfileComments(accountId, page = 0, count = 100) {
   return getJson(url);
 }
 
-async function findLevelComment(levelId, user, maxPages = 20) {
+async function getUserCommentHistory(playerId, page = 0, count = 100) {
+  const url = `${GDBROWSER_BASE}/comments/${encodeURIComponent(playerId)}?type=commentHistory&page=${page}&count=${count}`;
+  return getJson(url);
+}
+
+async function findLevelComment(levelId, user, maxPages = 100) {
   for (let page = 0; page < maxPages; page += 1) {
     const comments = await getLevelComments(levelId, page, 100);
 
-    if (!Array.isArray(comments) || comments.length === 0) {
-      return null;
-    }
+    if (!Array.isArray(comments) || comments.length === 0) return null;
 
     const match = comments.find(comment => matchesUser(comment, user));
-    if (match) {
-      return match;
-    }
+    if (match) return match;
 
-    if (comments.length < 100) {
-      return null;
-    }
+    if (comments.length < 100) return null;
   }
 
   return null;
 }
 
-async function findProfileComment(accountId, user, maxPages = 20) {
+async function findProfileComment(accountId, user, maxPages = 100) {
   for (let page = 0; page < maxPages; page += 1) {
     const comments = await getProfileComments(accountId, page, 100);
 
-    if (!Array.isArray(comments) || comments.length === 0) {
-      return null;
-    }
+    if (!Array.isArray(comments) || comments.length === 0) return null;
 
     const match = comments.find(comment => matchesUser(comment, user));
-    if (match) {
-      return match;
-    }
+    if (match) return match;
 
-    if (comments.length < 100) {
-      return null;
-    }
+    if (comments.length < 100) return null;
   }
 
   return null;
+}
+
+async function getAllUserComments(playerId, maxPages = 100) {
+  const all = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const comments = await getUserCommentHistory(playerId, page, 100);
+
+    if (!Array.isArray(comments) || comments.length === 0) break;
+
+    all.push(...comments);
+
+    if (comments.length < 100) break;
+  }
+
+  return all;
 }
 
 async function getHistoricalCommentDate(levelId, commentId) {
   const url = `${GDHISTORY_BASE}/date/comment/${encodeURIComponent(levelId)}/${encodeURIComponent(commentId)}/level/`;
   const data = await getJson(url);
 
-  // GDHistory's response shape has changed over time, so return the useful
-  // value without assuming a single property name.
   if (typeof data === "string") return data;
   if (data && typeof data === "object") {
     return data.date || data.datetime || data.timestamp || data.closest || null;
@@ -122,8 +133,11 @@ async function lookupCompletionDate({ levelId, user }) {
 }
 
 module.exports = {
+  getProfile,
   getLevelComments,
   getProfileComments,
+  getUserCommentHistory,
+  getAllUserComments,
   findLevelComment,
   findProfileComment,
   getHistoricalCommentDate,
