@@ -1,0 +1,30 @@
+name: Test Geometry Dash API Access
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-boomlings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Boomlings connection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Testing Boomlings from a GitHub-hosted runner..."
+
+          response=$(curl -sS \
+            -X POST \
+            "https://www.boomlings.com/database/getGJDailyLevel.php" \
+            -A "" \
+            --data "secret=Wmfd2893gb7&type=0")
+
+          echo "Boomlings response: $response"
+
+          if [ -z "$response" ] || [ "$response" = "-1" ]; then
+            echo "Boomlings did not return a valid response."
+            exit 1
+          fi
+
+          echo "GitHub Actions can reach the Geometry Dash servers."
