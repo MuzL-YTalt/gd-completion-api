@@ -1,0 +1,69 @@
+name: Test Level Lookup
+
+on:
+  workflow_dispatch:
+    inputs:
+      level_name:
+        description: "Exact level name"
+        required: true
+        type: string
+      creator:
+        description: "Creator, only needed when the name is ambiguous"
+        required: false
+        type: string
+      level_id:
+        description: "Level ID, preferred when the name is ambiguous"
+        required: false
+        type: string
+
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve level, then find user's comment
+        shell: bash
+        env:
+          LEVEL_NAME: ${{ inputs.level_name }}
+          CREATOR: ${{ inputs.creator }}
+          LEVEL_ID: ${{ inputs.level_id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { lookupCompletion } = require('./src/lookup');
+
+          (async () => {
+            const result = await lookupCompletion({
+              levelName: process.env.LEVEL_NAME,
+              creator: process.env.CREATOR || null,
+              levelId: process.env.LEVEL_ID || null,
+              user: {
+                accountId: '18986696',
+                playerId: '142174806',
+                username: 'MuzL'
+              }
+            });
+
+            console.log(JSON.stringify(result, null, 2));
+
+            if (result.status === 'needs_disambiguation') {
+              console.log('Multiple matching levels found. Enter the creator or, preferably, the Level ID and run this workflow again.');
+              process.exit(2);
+            }
+
+            if (result.status === 'not_found') {
+              console.log('No matching level was found.');
+              process.exit(3);
+            }
+
+            if (result.status === 'level_resolved_comment_not_found') {
+              console.log('The level was uniquely identified, but no comment from the configured user was found on that level.');
+              process.exit(4);
+            }
+          })().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
