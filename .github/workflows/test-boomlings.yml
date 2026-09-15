@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  GD_ACCOUNT_ID: "18986696"
+
 jobs:
   test-gdbrowser:
     runs-on: ubuntu-latest
@@ -27,20 +30,30 @@ jobs:
           printf '%s' "$comments" | jq -e 'type == "array"' >/dev/null
           echo "GDBrowser level comments work."
 
-      - name: Test GDBrowser profile comments
+      - name: Resolve user's Geometry Dash profile
         shell: bash
         run: |
           set -euo pipefail
-          comments=$(curl -fsS "https://gdbrowser.com/api/comments/306345839?type=profile&count=100")
+          profile=$(curl -fsS "https://gdbrowser.com/api/profile/$GD_ACCOUNT_ID")
+          echo "Profile returned for account ID $GD_ACCOUNT_ID:"
+          printf '%s' "$profile" | jq '{username, playerID, accountID, commentHistory}'
+          printf '%s' "$profile" | jq -e --arg id "$GD_ACCOUNT_ID" '(.accountID | tostring) == $id' >/dev/null
+          echo "User profile resolved successfully."
+
+      - name: Test user's profile comments
+        shell: bash
+        run: |
+          set -euo pipefail
+          comments=$(curl -fsS "https://gdbrowser.com/api/comments/$GD_ACCOUNT_ID?type=profile&count=100")
+          echo "Profile comments for account ID $GD_ACCOUNT_ID:"
           printf '%s' "$comments" | jq 'if length > 0 then .[0] | {ID, content, username, playerID, accountID, date} else {} end'
           printf '%s' "$comments" | jq -e 'type == "array"' >/dev/null
-          echo "GDBrowser profile comments endpoint works."
+          echo "User profile comments endpoint works."
 
       - name: Test GDHistory comment date service
         shell: bash
         run: |
           set -euo pipefail
-          # Known comment returned by the GDBrowser test above.
           comment_id=431737815
           date_response=$(curl -fsS "https://history.geometrydash.eu/api/v1/date/comment/128/$comment_id/level/")
           echo "GDHistory response: $date_response"
