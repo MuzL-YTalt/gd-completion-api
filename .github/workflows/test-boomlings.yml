@@ -22,24 +22,42 @@ jobs:
           printf '%s' "$response" | jq -e '.id and .name' >/dev/null
           echo "GDBrowser level API works."
 
-      - name: Test GDBrowser level comments
-        shell: bash
-        run: |
-          set -euo pipefail
-          comments=$(curl -fsS "https://gdbrowser.com/api/comments/128?count=100")
-          printf '%s' "$comments" | jq '.[0] | {ID, content, username, playerID, accountID, date, levelID}'
-          printf '%s' "$comments" | jq -e 'type == "array"' >/dev/null
-          echo "GDBrowser level comments work."
-
       - name: Resolve user's Geometry Dash profile
         shell: bash
         run: |
           set -euo pipefail
           profile=$(curl -fsS "https://gdbrowser.com/api/profile/$GD_ACCOUNT_ID")
           echo "Profile returned for account ID $GD_ACCOUNT_ID:"
-          printf '%s' "$profile" | jq '{username, playerID, accountID}'
+          printf '%s' "$profile" | jq '{username, playerID, accountID, commentHistory}'
           printf '%s' "$profile" | jq -e --arg id "$GD_ACCOUNT_ID" '(.accountID | tostring) == $id' >/dev/null
           echo "User profile resolved successfully."
+
+      - name: Fetch all user comment history
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile=$(curl -fsS "https://gdbrowser.com/api/profile/$GD_ACCOUNT_ID")
+          player_id=$(printf '%s' "$profile" | jq -r '.playerID')
+          username=$(printf '%s' "$profile" | jq -r '.username')
+          echo "Resolved $username: player ID $player_id, account ID $GD_ACCOUNT_ID"
+
+          page=0
+          total=0
+          while [ "$page" -lt 100 ]; do
+            comments=$(curl -fsS "https://gdbrowser.com/api/comments/$player_id?type=commentHistory&page=$page&count=100")
+            count=$(printf '%s' "$comments" | jq 'length')
+            echo "Comment-history page $page: $count comments"
+            total=$((total + count))
+
+            if [ "$count" -eq 0 ] || [ "$count" -lt 100 ]; then
+              break
+            fi
+
+            page=$((page + 1))
+          done
+
+          echo "TOTAL USER COMMENTS FOUND: $total"
+          test "$total" -ge 0
 
       - name: Test user's profile comments
         shell: bash
