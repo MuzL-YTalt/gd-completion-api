@@ -14,10 +14,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Testing GDBrowser from a GitHub-hosted runner..."
-
-          response=$(curl -fsS \
-            "https://gdbrowser.com/api/level/128")
+          response=$(curl -fsS "https://gdbrowser.com/api/level/128")
 
           if ! printf '%s' "$response" | grep -q '"id"'; then
             echo "GDBrowser did not return the expected JSON level data."
@@ -36,70 +33,69 @@ jobs:
         run: |
           set -euo pipefail
 
-          comments=$(curl -fsS \
-            "https://gdbrowser.com/api/comments/128")
+          comments=$(curl -fsS "https://gdbrowser.com/api/comments/128?count=100")
 
-          echo "First level comment:"
           printf '%s' "$comments" | jq '.[0] | {ID, content, username, playerID, accountID, date, levelID}'
 
           comment_id=$(printf '%s' "$comments" | jq -r '.[0].ID // empty')
+          player_id=$(printf '%s' "$comments" | jq -r '.[0].playerID // empty')
 
           if [ -z "$comment_id" ]; then
             echo "No comment ID was found."
             exit 1
           fi
 
-          echo "GDBrowser level comments work."
+          echo "Level comment endpoint works."
+          echo "Example comment ID: $comment_id"
+          echo "Example player ID: $player_id"
 
       - name: Test GDBrowser account comments
         shell: bash
         run: |
           set -euo pipefail
 
-          # Uino's player ID from the level-comment response above.
-          account_comments=$(curl -fsS \
-            "https://gdbrowser.com/api/comments/306345839?type=profile")
-
-          echo "First account/profile comment:"
-          printf '%s' "$account_comments" | jq '.[0] // {} | {ID, content, username, playerID, accountID, date}'
+          # Colon's player ID is publicly shown by GDBrowser and is used here
+          # only as a stable test account. The production lookup will use the
+          # user's configured player/account ID instead.
+          account_comments=$(curl -fsS "https://gdbrowser.com/api/comments/4136576?type=profile&count=100")
 
           if ! printf '%s' "$account_comments" | jq -e 'type == "array"' >/dev/null; then
             echo "GDBrowser did not return an account-comment array."
             exit 1
           fi
 
-          echo "GDBrowser account comments work."
+          printf '%s' "$account_comments" | jq '.[0] // {} | {ID, content, date}'
+          echo "GDBrowser account-comment endpoint works."
 
-      - name: Test GDHistory date estimation
+      - name: Test GDHistory date lookup
         shell: bash
         run: |
           set -euo pipefail
 
-          # Use an older page of level comments so the historical estimator has
-          # a better chance of having data for the comment.
-          old_comments=$(curl -fsS \
-            "https://gdbrowser.com/api/comments/128?page=4426")
+          comments=$(curl -fsS "https://gdbrowser.com/api/comments/128?count=1")
+          comment_id=$(printf '%s' "$comments" | jq -r '.[0].ID // empty')
 
-          old_comment_id=$(printf '%s' "$old_comments" | jq -r '.[0].ID // empty')
-
-          if [ -z "$old_comment_id" ]; then
-            echo "No older comment was returned by GDBrowser."
+          if [ -z "$comment_id" ]; then
+            echo "No comment ID was available for the GDHistory test."
             exit 1
           fi
 
-          echo "Testing GDHistory for old comment $old_comment_id..."
-
           date_response=$(curl -fsS \
-            "https://history.geometrydash.eu/api/v1/date/comment/128/$old_comment_id/level/")
+            "https://history.geometrydash.eu/api/v1/date/comment/128/$comment_id/level/")
 
           echo "GDHistory response: $date_response"
 
-          # GDHistory is an estimator and its database is incomplete, so an
-          # empty object is a valid service response; it simply means that no
-          # estimate is available for this particular comment yet.
           if ! printf '%s' "$date_response" | jq -e 'type == "object"' >/dev/null; then
             echo "GDHistory returned an unexpected response."
             exit 1
           fi
 
-          echo "GDHistory date service is reachable."
+          echo "GDHistory date endpoint is reachable."
+
+      - name: Summarize timestamp limitation
+        shell: bash
+        run: |
+          echo "GDBrowser exposes the comment's relative date, ID, author and level/account information."
+          echo "BetterInfo confirms that Geometry Dash internally receives an exact timestamp as comment key 15."
+          echo "The public GDBrowser API currently strips that timestamp, so exact dates require a source that preserves the raw GD response."
+          echo "The production lookup will therefore use exact data when available, GDHistory estimation as a fallback, and GDBrowser's relative date otherwise."
