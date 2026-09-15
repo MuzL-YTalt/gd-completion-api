@@ -7,7 +7,6 @@ on:
 
 env:
   GD_ACCOUNT_ID: "18986696"
-  PHOBOS_LEVEL_ID: "19759411"
 
 jobs:
   test-gdbrowser:
@@ -69,32 +68,27 @@ jobs:
           printf '%s' "$comments" | jq -e 'type == "array"' >/dev/null
           echo "User profile comments endpoint works."
 
-      - name: Test Phobos completion comment lookup
-        shell: bash
-        run: |
-          set -euo pipefail
-          comments=$(curl -fsS "https://gdbrowser.com/api/comments/$PHOBOS_LEVEL_ID?count=100")
-          echo "Searching Phobos ($PHOBOS_LEVEL_ID) for account ID $GD_ACCOUNT_ID..."
-          printf '%s' "$comments" | jq --arg account "$GD_ACCOUNT_ID" '[.[] | select((.accountID | tostring) == $account)] | .[] | {ID, content, username, playerID, accountID, date, levelID}'
-          if printf '%s' "$comments" | jq -e --arg account "$GD_ACCOUNT_ID" 'any(.[]; (.accountID | tostring) == $account)' >/dev/null; then
-            echo "Found a comment from the user's account on Phobos."
-          else
-            echo "No comment from the user's account was found on the first 100 Phobos comments."
-          fi
-
-      - name: Run lookup module against Phobos
+      - name: Test lookup module with the user's account
         shell: bash
         run: |
           set -euo pipefail
           cat > test-lookup.js <<'EOF'
-          const { lookupCompletionDate } = require('./src/lookup');
+          const { getProfile, getAllUserComments } = require('./src/lookup');
 
           (async () => {
-            const result = await lookupCompletionDate({
-              levelId: process.env.PHOBOS_LEVEL_ID,
-              user: { accountId: process.env.GD_ACCOUNT_ID }
-            });
-            console.log(JSON.stringify(result, null, 2));
+            const accountId = process.env.GD_ACCOUNT_ID;
+            const profile = await getProfile(accountId);
+            const comments = await getAllUserComments(accountId);
+
+            console.log(JSON.stringify({
+              username: profile.username,
+              playerID: profile.playerID,
+              accountID: profile.accountID,
+              commentHistory: profile.commentHistory,
+              levelCommentCount: comments.length,
+              firstComment: comments[0] || null,
+              lastComment: comments[comments.length - 1] || null
+            }, null, 2));
           })().catch(error => {
             console.error(error);
             process.exit(1);
