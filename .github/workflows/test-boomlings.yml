@@ -12,6 +12,9 @@ jobs:
   test-gdbrowser:
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Test GDBrowser level endpoint
         shell: bash
         run: |
@@ -72,7 +75,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > test-lookup.js <<'EOF'
+          node - <<'EOF'
           const { getProfile, getAllUserComments } = require('./src/lookup');
 
           (async () => {
@@ -94,7 +97,6 @@ jobs:
             process.exit(1);
           });
           EOF
-          node test-lookup.js
 
       - name: Test GDHistory comment date service
         shell: bash
