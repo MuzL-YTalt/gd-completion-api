@@ -19,7 +19,7 @@ jobs:
           response=$(curl -fsS \
             "https://gdbrowser.com/api/level/128")
 
-          echo "GDBrowser response: $response"
+          echo "GDBrowser level response: $response"
 
           if ! printf '%s' "$response" | grep -q '"id"'; then
             echo "GDBrowser did not return the expected JSON level data."
@@ -31,4 +31,37 @@ jobs:
             exit 1
           fi
 
-          echo "GDBrowser API is reachable and returning level data."
+          echo "GDBrowser level API is reachable and returning level data."
+
+      - name: Test GDBrowser comments and date service
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Testing GDBrowser comments..."
+
+          comments=$(curl -fsS \
+            "https://gdbrowser.com/api/comments/128")
+
+          echo "GDBrowser comments response: $comments"
+
+          comment_id=$(printf '%s' "$comments" | jq -r '.[0].ID // .[0].id // empty')
+
+          if [ -z "$comment_id" ]; then
+            echo "No comment ID was found in the GDBrowser response."
+            exit 1
+          fi
+
+          echo "Testing GDHistory date service for level 128, comment $comment_id..."
+
+          date_response=$(curl -fsS \
+            "https://history.geometrydash.eu/api/v1/date/comment/128/$comment_id/level/")
+
+          echo "GDHistory date response: $date_response"
+
+          if ! printf '%s' "$date_response" | jq -e '.approx.estimation // .low.estimation' >/dev/null; then
+            echo "GDHistory did not return an expected date estimate."
+            exit 1
+          fi
+
+          echo "GDBrowser comment lookup and GDHistory date lookup both work."
